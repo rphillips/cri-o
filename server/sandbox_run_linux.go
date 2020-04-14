@@ -638,6 +638,7 @@ func (s *Server) runPodSandbox(ctx context.Context, req *pb.RunPodSandboxRequest
 	sb.SetCreated()
 
 	if ctx.Err() == context.Canceled || ctx.Err() == context.DeadlineExceeded {
+		err = ctx.Err()
 		return nil, ctx.Err()
 	}
 
