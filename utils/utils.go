@@ -58,6 +58,8 @@ func RunUnderSystemdScope(pid int, slice, unitName string, properties ...systemd
 		return err
 	}
 	defaultProperties := []systemdDbus.Property{
+		newProp("Before", "shutdown.target"),
+		newProp("Conflicts", "shutdown.target"),
 		newProp("PIDs", []uint32{uint32(pid)}),
 		newProp("Delegate", true),
 		newProp("DefaultDependencies", false),
