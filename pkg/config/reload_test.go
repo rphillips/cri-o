@@ -451,8 +451,35 @@ var _ = t.Describe("Config", func() {
 			newConfig := defaultConfig()
 			newConfig.Runtimes = sut.Runtimes
 
+			// Containers keep using the previous profile during the reload.
+			done := make(chan struct{})
+			started := make(chan struct{})
+			reading := make(chan struct{})
+
+			go func() {
+				defer close(reading)
+
+				_ = previous.NotifierPath()
+
+				close(started)
+
+				for {
+					select {
+					case <-done:
+						return
+					default:
+						_ = previous.NotifierPath()
+					}
+				}
+			}()
+
+			<-started
+
 			// When
 			err := sut.ReloadRuntimes(newConfig)
+
+			close(done)
+			<-reading
 
 			// Then
 			Expect(err).ToNot(HaveOccurred())

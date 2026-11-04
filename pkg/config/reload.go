@@ -285,12 +285,12 @@ func (c *Config) reloadRuntimeSeccompProfiles() {
 		handlerCopy := *handler
 
 		if err := handlerCopy.validateRuntimeSeccompProfile(c.SeccompBaselineProfile); err != nil {
+			// The previous profile is in use, so it is not touched; its
+			// notifier path was set when it was loaded.
 			logrus.Warnf(
 				"Keeping the previous seccomp profile of runtime handler %q: %v", name, err,
 			)
-		}
-
-		if handlerCopy.seccompConfig != nil {
+		} else if handlerCopy.seccompConfig != nil {
 			handlerCopy.seccompConfig.SetNotifierPath(
 				filepath.Join(filepath.Dir(c.Listen), "seccomp"),
 			)
