@@ -12,7 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -654,6 +656,69 @@ var _ = t.Describe("Store", func() {
 			Expect(prepared).To(Equal(1))
 			Expect(cleaned).To(Equal(1))
 			Expect(discarded).To(Equal(1))
+			Expect(registry.sys.AuthFilePath).To(Equal("/tmp/auth.json"))
+		})
+
+		It("should take the credentials before a caller can join and give up", func() {
+			// Given
+			registry.release = make(chan struct{})
+
+			joined := make(chan struct{}, 2)
+			sut.SetJoinedHook(func() { joined <- struct{}{} })
+
+			// Both requests write their credentials to the same file.
+			var authFile atomic.Bool
+
+			authFile.Store(true)
+
+			auth := &securityprofile.Auth{
+				Scope: "namespace",
+				Prepare: func(sys *imagetypes.SystemContext) (func(), error) {
+					// Give a joining caller the chance to discard first.
+					time.Sleep(50 * time.Millisecond)
+
+					if authFile.Swap(false) {
+						sys.AuthFilePath = "/tmp/auth.json"
+					}
+
+					return func() {}, nil
+				},
+				Discard: func() { authFile.Store(false) },
+			}
+
+			firstErr := make(chan error, 1)
+
+			go func() {
+				_, err := sut.Pull(ctx, profile.ref(), types.SecurityProfileKind_Seccomp, sys, auth)
+				firstErr <- err
+			}()
+
+			<-joined
+
+			secondCtx, cancel := context.WithCancel(ctx)
+			secondErr := make(chan error, 1)
+
+			go func() {
+				_, err := sut.Pull(
+					secondCtx,
+					profile.ref(),
+					types.SecurityProfileKind_Seccomp,
+					sys,
+					auth,
+				)
+				secondErr <- err
+			}()
+
+			<-joined
+
+			// When
+			cancel()
+			Eventually(secondErr).Should(Receive(MatchError(context.Canceled)))
+			close(registry.release)
+
+			// Then
+			Eventually(firstErr).Should(Receive(BeNil()))
+			Expect(registry.openCount()).To(Equal(1))
 			Expect(registry.sys.AuthFilePath).To(Equal("/tmp/auth.json"))
 		})
 

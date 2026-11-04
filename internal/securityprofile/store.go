@@ -272,8 +272,18 @@ func (s *Store) sharedPull(
 		pull = &inflightPull{done: make(chan struct{})}
 		s.pulls[key] = pull
 
+		// The credentials are taken before anyone can join the pull, because
+		// a caller that joins discards its own, which live where these do.
+		pullSys := *sys
+		cleanup, prepareErr := prepareAuth(auth, &pullSys)
+
 		go func() {
-			pull.e, pull.err = s.pull(ctx, ref, requested, mediaType, policy, sys, auth)
+			if prepareErr != nil {
+				pull.err = prepareErr
+			} else {
+				pull.e, pull.err = s.pull(ctx, ref, requested, mediaType, policy, sys, &pullSys)
+				cleanup()
+			}
 
 			s.pullsMu.Lock()
 			delete(s.pulls, key)
@@ -305,29 +315,29 @@ type inflightPull struct {
 	err  error
 }
 
-// pull fetches, verifies and records one profile, with the credentials of the
-// request, and does not stop when the caller does.
+// prepareAuth adds the credentials of auth to sys and returns the function
+// that cleans them up.
+func prepareAuth(auth *Auth, sys *imagetypes.SystemContext) (cleanup func(), err error) {
+	if auth == nil || auth.Prepare == nil {
+		return func() {}, nil
+	}
+
+	return auth.Prepare(sys)
+}
+
+// pull fetches, verifies and records one profile, with the system context of
+// the request, and pullSys, which adds its credentials, and does not stop when
+// the caller does.
 func (s *Store) pull(
 	ctx context.Context,
 	ref reference.Canonical,
 	requested, mediaType, policy string,
-	sys *imagetypes.SystemContext,
-	auth *Auth,
+	sys, pullSys *imagetypes.SystemContext,
 ) (*entry, error) {
 	pullCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pullTimeout)
 	defer cancel()
 
-	pullSys := *sys
-
-	if auth != nil && auth.Prepare != nil {
-		cleanup, err := auth.Prepare(&pullSys)
-		if err != nil {
-			return nil, err
-		}
-		defer cleanup()
-	}
-
-	p, err := s.fetch(pullCtx, ref, mediaType, &pullSys)
+	p, err := s.fetch(pullCtx, ref, mediaType, pullSys)
 	if err != nil {
 		return nil, err
 	}
