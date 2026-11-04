@@ -554,6 +554,37 @@ var _ = t.Describe("Store", func() {
 			Expect(registry.openCount()).To(Equal(2))
 		})
 
+		It("should pull a present profile again once a key rotates keeping size and mtime", func() {
+			// Given
+			keyPath := filepath.Join(GinkgoT().TempDir(), "key.pub")
+			Expect(os.WriteFile(keyPath, []byte("old"), 0o644)).To(Succeed())
+
+			info, err := os.Stat(keyPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			sys.SignaturePolicyPath = writePolicy(`{
+				"default": [{"type": "insecureAcceptAnything"}],
+				"transports": {"docker": {"other.example.com": [
+					{"type": "signedBy", "keyType": "GPGKeys", "keyPath": "` + keyPath + `"}
+				]}}
+			}`)
+
+			_, err = pull(profile.ref())
+			Expect(err).NotTo(HaveOccurred())
+
+			// Like a copy that preserves the timestamps, such as cp -p.
+			Expect(os.WriteFile(keyPath, []byte("new"), 0o644)).To(Succeed())
+			Expect(os.Chtimes(keyPath, info.ModTime(), info.ModTime())).To(Succeed())
+
+			// When
+			cached, err := pull(profile.ref())
+
+			// Then
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cached).To(BeFalse())
+			Expect(registry.openCount()).To(Equal(2))
+		})
+
 		It("should fail and not record a profile if the policy changes during the pull", func() {
 			// Given
 			policyPath := sys.SignaturePolicyPath

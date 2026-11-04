@@ -8,12 +8,12 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/opencontainers/go-digest"
 	"go.podman.io/image/v5/signature"
 	imagetypes "go.podman.io/image/v5/types"
 	"go.podman.io/storage/pkg/configfile"
+	"golang.org/x/sys/unix"
 )
 
 // policyCache keeps the IDs of signature policies until one of the files they
@@ -29,20 +29,32 @@ type cachedPolicy struct {
 	files map[string]fileStamp
 }
 
-// fileStamp identifies a version of a file.
+// fileStamp identifies a version of a file. The change time and the inode
+// are part of it, because a key rotated to one of the same size by a copy
+// that preserves the modification time, such as cp -p or rsync -t, changes
+// nothing else; neither can be set from user space.
 type fileStamp struct {
-	modTime time.Time
-	size    int64
-	exists  bool
+	modTime    unix.Timespec
+	changeTime unix.Timespec
+	dev, ino   uint64
+	size       int64
+	exists     bool
 }
 
 func stampFile(path string) fileStamp {
-	info, err := os.Stat(path)
-	if err != nil {
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
 		return fileStamp{}
 	}
 
-	return fileStamp{modTime: info.ModTime(), size: info.Size(), exists: true}
+	return fileStamp{
+		modTime:    st.Mtim,
+		changeTime: st.Ctim,
+		dev:        uint64(st.Dev), //nolint:unconvert // The type differs by platform.
+		ino:        st.Ino,
+		size:       st.Size,
+		exists:     true,
+	}
 }
 
 // id returns the ID of the signature policy of sys.
