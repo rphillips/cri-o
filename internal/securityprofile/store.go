@@ -359,7 +359,8 @@ func (s *Store) pull(
 }
 
 // pullKey identifies a pull by everything that decides its outcome. The
-// credentials are part of it, so that a pull never uses those of another pod.
+// credentials are part of it, so that a pull never uses those of another pod,
+// but only as a digest, so that the key does not hold secrets in the clear.
 func pullKey(
 	ref reference.Named,
 	mediaType, policy string,
@@ -369,7 +370,9 @@ func pullKey(
 	key := ref.String() + "\x00" + mediaType + "\x00" + policy + "\x00" + sys.AuthFilePath
 
 	if config := sys.DockerAuthConfig; config != nil {
-		key += "\x00" + config.Username + "\x00" + config.Password + "\x00" + config.IdentityToken
+		key += "\x00" + digest.FromString(
+			config.Username+"\x00"+config.Password+"\x00"+config.IdentityToken,
+		).String()
 	}
 
 	if auth != nil {
