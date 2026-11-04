@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	rspec "github.com/opencontainers/runtime-spec/specs-go"
+	"go.podman.io/common/pkg/seccomp"
 	spmseccomp "sigs.k8s.io/security-profiles-merger/seccomp"
 )
 
@@ -17,7 +18,7 @@ func TestSafeShapeDefaultProfile(t *testing.T) {
 	caps := []string{"CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_FSETID", "CAP_FOWNER", "CAP_SETGID", "CAP_SETUID", "CAP_SETPCAP", "CAP_NET_BIND_SERVICE", "CAP_KILL"}
 	spec := &rspec.Spec{Process: &rspec.Process{Capabilities: &rspec.LinuxCapabilities{Bounding: caps, Effective: caps, Permitted: caps}}}
 
-	rendered, err := renderProfile(DefaultProfile(), spec)
+	rendered, err := seccomp.LoadProfileFromConfig(DefaultProfile(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}

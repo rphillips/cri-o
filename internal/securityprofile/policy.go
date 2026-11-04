@@ -61,7 +61,7 @@ func stampFile(path string) fileStamp {
 func (c *policyCache) id(sys *imagetypes.SystemContext) (string, error) {
 	path := policyPath(sys)
 	if path == "" {
-		return policyID(sys)
+		return computePolicyID(sys, nil)
 	}
 
 	c.mu.Lock()
@@ -142,16 +142,11 @@ func policyPath(sys *imagetypes.SystemContext) string {
 	return ""
 }
 
-// policyID identifies the signature policy of sys by its content and by the
-// content of the files it references, such as keys and certificates, so that
-// a profile verified under a policy is verified again once a key rotates, and
-// namespaces with the same policy share verified profiles.
-func policyID(sys *imagetypes.SystemContext) (string, error) {
-	return computePolicyID(sys, nil)
-}
-
-// computePolicyID returns the ID of the policy, stamping the files it
-// references in stamps before reading them if it is not nil.
+// computePolicyID identifies the signature policy of sys by its content and
+// by the content of the files it references, such as keys and certificates,
+// so that a profile verified under a policy is verified again once a key
+// rotates, and namespaces with the same policy share verified profiles. It
+// stamps the referenced files in stamps before reading them if it is not nil.
 func computePolicyID(sys *imagetypes.SystemContext, stamps map[string]fileStamp) (string, error) {
 	policy, err := signature.DefaultPolicy(sys)
 	if err != nil {

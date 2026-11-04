@@ -380,14 +380,6 @@ func mergeableBase(rendered *rspec.LinuxSeccomp) (*rspec.LinuxSeccomp, error) {
 	return base, nil
 }
 
-// renderProfile converts a node-local profile into the form of the runtime
-// spec for the capabilities and the architecture of the container. It returns
-// nil for a profile without a filter, which runs containers unconfined: such
-// a profile restricts nothing, so it stays out of the merge.
-func renderProfile(profile *seccomp.Seccomp, spec *rspec.Spec) (*rspec.LinuxSeccomp, error) {
-	return seccomp.LoadProfileFromConfig(profile, spec)
-}
-
 // BaselineProfile returns the configured baseline profile, or the loaded
 // profile if none is configured.
 func (c *Config) BaselineProfile() *seccomp.Seccomp {
@@ -620,11 +612,15 @@ func intersectLocal(profiles []*seccomp.Seccomp, spec *rspec.Spec) (*rspec.Linux
 	var rendered []*rspec.LinuxSeccomp
 
 	for _, profile := range profiles {
-		linuxSpecs, err := renderProfile(profile, spec)
+		// Rendered for the capabilities and the architecture of the
+		// container.
+		linuxSpecs, err := seccomp.LoadProfileFromConfig(profile, spec)
 		if err != nil {
 			return nil, err
 		}
 
+		// A profile without a filter runs containers unconfined: it
+		// restricts nothing, so it stays out of the merge.
 		if linuxSpecs == nil {
 			continue
 		}
