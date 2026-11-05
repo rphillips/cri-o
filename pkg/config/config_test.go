@@ -78,6 +78,43 @@ var _ = t.Describe("Config", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
+		DescribeTable("should default stream_websockets of pod runtimes by stream_enable_tls",
+			func(streamEnableTLS, expectWebsockets bool) {
+				if isRootless() {
+					Skip("this test does not work rootless")
+				}
+
+				// Given
+				conmonrs := conmonrsFakeBinary(
+					`echo '{ "version": "1.2.0", "features": ["portforward", "idletimeout", "streamingprotocols"] }'`,
+				)
+				DeferCleanup(os.RemoveAll, conmonrs)
+
+				sut = runtimeValidConfig()
+				sut.Runtimes["pod"] = &config.RuntimeHandler{
+					RuntimePath: validFilePath,
+					RuntimeType: config.RuntimeTypePod,
+					MonitorPath: conmonrs,
+				}
+
+				if streamEnableTLS {
+					sut.StreamEnableTLS = true
+					sut.StreamTLSCert = "cert"
+					sut.StreamTLSKey = "key"
+				}
+
+				// When
+				err := sut.Validate(true)
+
+				// Then
+				Expect(err).ToNot(HaveOccurred())
+				Expect(sut.Runtimes).To(HaveKey("pod"))
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(Equal(expectWebsockets))
+			},
+			Entry("enabled without TLS", false, true),
+			Entry("disabled with TLS", true, false),
+		)
+
 		It("should fail with invalid log_dir", func() {
 			// Given
 			sut.LogDir = "/dev/null"
