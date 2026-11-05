@@ -1212,6 +1212,24 @@ var _ = t.Describe("Config", func() {
 			Expect(sut.Runtimes[config.DefaultRuntime].StreamWebsockets).To(BeNil())
 		})
 
+		It("should enable streaming websockets by default when validating the runtimes", func() {
+			fileName := conmonrsFakeBinary(
+				`echo '{ "version": "1.2.0", "features": ["portforward", "idletimeout", "streamingprotocols"] }'`,
+			)
+			defer os.RemoveAll(fileName)
+
+			sut.Runtimes["pod"] = &config.RuntimeHandler{
+				RuntimePath: validFilePath,
+				RuntimeType: config.RuntimeTypePod,
+				MonitorPath: fileName,
+			}
+
+			Expect(sut.ValidateRuntimes()).To(Succeed())
+			Expect(sut.Runtimes).To(HaveKey("pod"))
+			Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeTrue())
+			Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeTrue())
+		})
+
 		Context("with stream_enable_tls", func() {
 			var conmonrs string
 
@@ -1283,19 +1301,6 @@ var _ = t.Describe("Config", func() {
 					StreamWebsockets: new(true),
 					MonitorPath:      conmonrs,
 					ExecCPUAffinity:  config.ExecCPUAffinityTypeFirst,
-				}
-
-				Expect(sut.ValidateRuntimes()).To(Succeed())
-				Expect(sut.Runtimes).To(HaveKey("pod"))
-				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeTrue())
-				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeTrue())
-			})
-
-			It("should enable streaming websockets by default if unset", func() {
-				sut.Runtimes["pod"] = &config.RuntimeHandler{
-					RuntimePath: validFilePath,
-					RuntimeType: config.RuntimeTypePod,
-					MonitorPath: conmonrs,
 				}
 
 				Expect(sut.ValidateRuntimes()).To(Succeed())
