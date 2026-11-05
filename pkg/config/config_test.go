@@ -1327,6 +1327,21 @@ var _ = t.Describe("Config", func() {
 				Expect(sut.Runtimes).To(HaveKey("pod"))
 				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeFalse())
 			})
+
+			It("should keep streaming websockets if enabled explicitly", func() {
+				sut.InfraCtrCPUSet = "0"
+				sut.Runtimes["pod"] = &config.RuntimeHandler{
+					RuntimePath:      validFilePath,
+					RuntimeType:      config.RuntimeTypePod,
+					StreamWebsockets: new(true),
+					MonitorPath:      conmonrs,
+				}
+
+				Expect(sut.ValidateRuntimes()).To(Succeed())
+				Expect(sut.Runtimes).To(HaveKey("pod"))
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeTrue())
+				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeTrue())
+			})
 		})
 
 		It(
