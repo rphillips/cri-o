@@ -324,6 +324,10 @@ func (c *Config) ReloadRuntimes(newConfig *Config) error {
 
 	validated := c.RuntimeConfig
 	validated.DefaultRuntime = newConfig.DefaultRuntime
+	// The streaming server keeps its TLS setting, which does not support a
+	// live reload. The copy above already carries it, set again to keep the
+	// default of stream_websockets tied to the running server.
+	validated.streamEnableTLS = c.StreamEnableTLS
 
 	validated.Runtimes = make(Runtimes, len(newConfig.Runtimes))
 	for name, handler := range newConfig.Runtimes {

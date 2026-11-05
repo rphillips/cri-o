@@ -1013,7 +1013,7 @@ var _ = t.Describe("Config", func() {
 			sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
 				RuntimePath:      validFilePath,
 				RuntimeType:      config.DefaultRuntimeType,
-				StreamWebsockets: true,
+				StreamWebsockets: new(true),
 			}
 
 			err := sut.Runtimes[config.DefaultRuntime].ValidateWebsocketStreaming(
@@ -1030,7 +1030,7 @@ var _ = t.Describe("Config", func() {
 			sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
 				RuntimePath:      validFilePath,
 				RuntimeType:      config.DefaultRuntimeType,
-				StreamWebsockets: false,
+				StreamWebsockets: new(false),
 			}
 
 			err := sut.Runtimes[config.DefaultRuntime].ValidateWebsocketStreaming(
@@ -1051,7 +1051,7 @@ var _ = t.Describe("Config", func() {
 				sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
 					RuntimePath:      validFilePath,
 					RuntimeType:      config.RuntimeTypePod,
-					StreamWebsockets: true,
+					StreamWebsockets: new(true),
 					MonitorPath:      fileName,
 				}
 
@@ -1059,7 +1059,7 @@ var _ = t.Describe("Config", func() {
 					config.DefaultRuntime,
 				)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(sut.Runtimes[config.DefaultRuntime].StreamWebsockets).To(BeTrue())
+				Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamWebsockets()).To(BeTrue())
 				Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamPortForward()).To(BeTrue())
 			},
 		)
@@ -1073,7 +1073,7 @@ var _ = t.Describe("Config", func() {
 			sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
 				RuntimePath:      validFilePath,
 				RuntimeType:      config.RuntimeTypePod,
-				StreamWebsockets: true,
+				StreamWebsockets: new(true),
 				MonitorPath:      fileName,
 			}
 
@@ -1081,11 +1081,32 @@ var _ = t.Describe("Config", func() {
 				config.DefaultRuntime,
 			)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(sut.Runtimes[config.DefaultRuntime].StreamWebsockets).To(BeFalse())
+			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamWebsockets()).To(BeFalse())
 			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamPortForward()).To(BeFalse())
 		})
 
 		It("should not serve port forwards from conmon-rs without streaming websockets", func() {
+			fileName := conmonrsFakeBinary(
+				`echo '{ "version": "1.2.0", "features": ["portforward", "idletimeout", "streamingprotocols"] }'`,
+			)
+			defer os.RemoveAll(fileName)
+
+			sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
+				RuntimePath:      validFilePath,
+				RuntimeType:      config.RuntimeTypePod,
+				StreamWebsockets: new(false),
+				MonitorPath:      fileName,
+			}
+
+			err := sut.Runtimes[config.DefaultRuntime].ValidateWebsocketStreaming(
+				config.DefaultRuntime,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamWebsockets()).To(BeFalse())
+			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamPortForward()).To(BeFalse())
+		})
+
+		It("should enable streaming websockets by default if conmon-rs supports it", func() {
 			fileName := conmonrsFakeBinary(
 				`echo '{ "version": "1.2.0", "features": ["portforward", "idletimeout", "streamingprotocols"] }'`,
 			)
@@ -1101,7 +1122,174 @@ var _ = t.Describe("Config", func() {
 				config.DefaultRuntime,
 			)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamPortForward()).To(BeFalse())
+			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamWebsockets()).To(BeTrue())
+			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamPortForward()).To(BeTrue())
+		})
+
+		It("should not enable streaming websockets by default if conmon-rs is older", func() {
+			fileName := conmonrsFakeBinary(
+				`echo '{ "version": "1.1.1", "features": ["sdnotify"] }'`,
+			)
+			defer os.RemoveAll(fileName)
+
+			sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
+				RuntimePath: validFilePath,
+				RuntimeType: config.RuntimeTypePod,
+				MonitorPath: fileName,
+			}
+
+			err := sut.Runtimes[config.DefaultRuntime].ValidateWebsocketStreaming(
+				config.DefaultRuntime,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamWebsockets()).To(BeFalse())
+		})
+
+		It("should not enable streaming websockets by default if conmon-rs is < v0.7.0", func() {
+			fileName := conmonrsFakeBinary("echo 'error: unexpected argument' >&2 && exit 1")
+			defer os.RemoveAll(fileName)
+
+			sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
+				RuntimePath: validFilePath,
+				RuntimeType: config.RuntimeTypePod,
+				MonitorPath: fileName,
+			}
+
+			err := sut.Runtimes[config.DefaultRuntime].ValidateWebsocketStreaming(
+				config.DefaultRuntime,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamWebsockets()).To(BeFalse())
+		})
+
+		It("should not enable streaming websockets by default for the 'oci' runtime", func() {
+			sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
+				RuntimePath: validFilePath,
+				RuntimeType: config.DefaultRuntimeType,
+			}
+
+			err := sut.Runtimes[config.DefaultRuntime].ValidateWebsocketStreaming(
+				config.DefaultRuntime,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sut.Runtimes[config.DefaultRuntime].StreamWebsockets).To(BeNil())
+		})
+
+		Context("with stream_enable_tls", func() {
+			var conmonrs string
+
+			BeforeEach(func() {
+				conmonrs = conmonrsFakeBinary(
+					`echo '{ "version": "1.2.0", "features": ["portforward", "idletimeout", "streamingprotocols"] }'`,
+				)
+				DeferCleanup(os.RemoveAll, conmonrs)
+
+				sut.SetStreamEnableTLS(true)
+			})
+
+			It("should not enable streaming websockets by default", func() {
+				sut.Runtimes["pod"] = &config.RuntimeHandler{
+					RuntimePath: validFilePath,
+					RuntimeType: config.RuntimeTypePod,
+					MonitorPath: conmonrs,
+				}
+
+				Expect(sut.ValidateRuntimes()).To(Succeed())
+				Expect(sut.Runtimes).To(HaveKey("pod"))
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeFalse())
+				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeFalse())
+			})
+
+			It("should keep streaming websockets if enabled explicitly", func() {
+				sut.Runtimes["pod"] = &config.RuntimeHandler{
+					RuntimePath:      validFilePath,
+					RuntimeType:      config.RuntimeTypePod,
+					StreamWebsockets: new(true),
+					MonitorPath:      conmonrs,
+				}
+
+				Expect(sut.ValidateRuntimes()).To(Succeed())
+				Expect(sut.Runtimes).To(HaveKey("pod"))
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeTrue())
+				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeTrue())
+			})
+		})
+
+		Context("with exec_cpu_affinity", func() {
+			var conmonrs string
+
+			BeforeEach(func() {
+				conmonrs = conmonrsFakeBinary(
+					`echo '{ "version": "1.2.0", "features": ["portforward", "idletimeout", "streamingprotocols"] }'`,
+				)
+				DeferCleanup(os.RemoveAll, conmonrs)
+			})
+
+			It("should not enable streaming websockets by default", func() {
+				sut.Runtimes["pod"] = &config.RuntimeHandler{
+					RuntimePath:     validFilePath,
+					RuntimeType:     config.RuntimeTypePod,
+					MonitorPath:     conmonrs,
+					ExecCPUAffinity: config.ExecCPUAffinityTypeFirst,
+				}
+
+				Expect(sut.ValidateRuntimes()).To(Succeed())
+				Expect(sut.Runtimes).To(HaveKey("pod"))
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeFalse())
+				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeFalse())
+			})
+
+			It("should keep streaming websockets if enabled explicitly", func() {
+				sut.Runtimes["pod"] = &config.RuntimeHandler{
+					RuntimePath:      validFilePath,
+					RuntimeType:      config.RuntimeTypePod,
+					StreamWebsockets: new(true),
+					MonitorPath:      conmonrs,
+					ExecCPUAffinity:  config.ExecCPUAffinityTypeFirst,
+				}
+
+				Expect(sut.ValidateRuntimes()).To(Succeed())
+				Expect(sut.Runtimes).To(HaveKey("pod"))
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeTrue())
+				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeTrue())
+			})
+
+			It("should enable streaming websockets by default if unset", func() {
+				sut.Runtimes["pod"] = &config.RuntimeHandler{
+					RuntimePath: validFilePath,
+					RuntimeType: config.RuntimeTypePod,
+					MonitorPath: conmonrs,
+				}
+
+				Expect(sut.ValidateRuntimes()).To(Succeed())
+				Expect(sut.Runtimes).To(HaveKey("pod"))
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeTrue())
+				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeTrue())
+			})
+		})
+
+		Context("with infra_ctr_cpuset", func() {
+			var conmonrs string
+
+			BeforeEach(func() {
+				conmonrs = conmonrsFakeBinary(
+					`echo '{ "version": "1.2.0", "features": ["portforward", "idletimeout", "streamingprotocols"] }'`,
+				)
+				DeferCleanup(os.RemoveAll, conmonrs)
+			})
+
+			It("should not enable streaming websockets by default", func() {
+				sut.InfraCtrCPUSet = "0"
+				sut.Runtimes["pod"] = &config.RuntimeHandler{
+					RuntimePath: validFilePath,
+					RuntimeType: config.RuntimeTypePod,
+					MonitorPath: conmonrs,
+				}
+
+				Expect(sut.ValidateRuntimes()).To(Succeed())
+				Expect(sut.Runtimes).To(HaveKey("pod"))
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeFalse())
+			})
 		})
 
 		It(
@@ -1115,7 +1303,7 @@ var _ = t.Describe("Config", func() {
 				sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
 					RuntimePath:      validFilePath,
 					RuntimeType:      config.RuntimeTypePod,
-					StreamWebsockets: true,
+					StreamWebsockets: new(true),
 					MonitorPath:      fileName,
 				}
 
@@ -1123,7 +1311,7 @@ var _ = t.Describe("Config", func() {
 					config.DefaultRuntime,
 				)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(sut.Runtimes[config.DefaultRuntime].StreamWebsockets).To(BeTrue())
+				Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamWebsockets()).To(BeTrue())
 				Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamPortForward()).To(BeFalse())
 			},
 		)
@@ -1135,7 +1323,7 @@ var _ = t.Describe("Config", func() {
 			sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
 				RuntimePath:      validFilePath,
 				RuntimeType:      config.RuntimeTypePod,
-				StreamWebsockets: true,
+				StreamWebsockets: new(true),
 				MonitorPath:      fileName,
 			}
 
@@ -1143,7 +1331,7 @@ var _ = t.Describe("Config", func() {
 				config.DefaultRuntime,
 			)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(sut.Runtimes[config.DefaultRuntime].StreamWebsockets).To(BeFalse())
+			Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamWebsockets()).To(BeFalse())
 		})
 
 		It(
@@ -1155,7 +1343,7 @@ var _ = t.Describe("Config", func() {
 				sut.Runtimes[config.DefaultRuntime] = &config.RuntimeHandler{
 					RuntimePath:      validFilePath,
 					RuntimeType:      config.RuntimeTypePod,
-					StreamWebsockets: true,
+					StreamWebsockets: new(true),
 					MonitorPath:      fileName,
 				}
 
@@ -1163,7 +1351,7 @@ var _ = t.Describe("Config", func() {
 					config.DefaultRuntime,
 				)
 				Expect(err).To(HaveOccurred())
-				Expect(sut.Runtimes[config.DefaultRuntime].StreamWebsockets).To(BeTrue())
+				Expect(sut.Runtimes[config.DefaultRuntime].RuntimeStreamWebsockets()).To(BeTrue())
 			},
 		)
 	})

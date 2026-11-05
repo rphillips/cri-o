@@ -536,7 +536,7 @@ var _ = t.Describe("Config", func() {
 					RuntimePath:      existingRuntimePath,
 					RuntimeType:      config.RuntimeTypePod,
 					MonitorPath:      conmonrs,
-					StreamWebsockets: true,
+					StreamWebsockets: new(true),
 				}
 			}
 
@@ -626,6 +626,67 @@ var _ = t.Describe("Config", func() {
 				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeFalse())
 				Expect(published.RuntimeStreamWebsockets()).To(BeTrue())
 				Expect(published.RuntimeStreamPortForward()).To(BeTrue())
+			})
+
+			It("should enable streaming websockets by default", func() {
+				// Given
+				handler := podRuntime()
+				handler.StreamWebsockets = nil
+
+				newConfig := &config.Config{}
+				newConfig.Runtimes = config.Runtimes{
+					config.DefaultRuntime: sut.Runtimes[config.DefaultRuntime],
+					"pod":                 handler,
+				}
+
+				// When
+				err := sut.ReloadRuntimes(newConfig)
+
+				// Then
+				Expect(err).ToNot(HaveOccurred())
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeTrue())
+				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeTrue())
+			})
+
+			It("should keep streaming websockets disabled explicitly", func() {
+				// Given
+				handler := podRuntime()
+				handler.StreamWebsockets = new(false)
+
+				newConfig := &config.Config{}
+				newConfig.Runtimes = config.Runtimes{
+					config.DefaultRuntime: sut.Runtimes[config.DefaultRuntime],
+					"pod":                 handler,
+				}
+
+				// When
+				err := sut.ReloadRuntimes(newConfig)
+
+				// Then
+				Expect(err).ToNot(HaveOccurred())
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeFalse())
+			})
+
+			It("should not enable streaming websockets by default with stream_enable_tls", func() {
+				// Given
+				sut.StreamEnableTLS = true
+
+				handler := podRuntime()
+				handler.StreamWebsockets = nil
+
+				newConfig := &config.Config{}
+				newConfig.Runtimes = config.Runtimes{
+					config.DefaultRuntime: sut.Runtimes[config.DefaultRuntime],
+					"pod":                 handler,
+				}
+
+				// When
+				err := sut.ReloadRuntimes(newConfig)
+
+				// Then
+				Expect(err).ToNot(HaveOccurred())
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeFalse())
+				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeFalse())
 			})
 		})
 	})
