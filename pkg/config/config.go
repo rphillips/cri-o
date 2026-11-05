@@ -705,7 +705,8 @@ type RuntimeConfig struct {
 
 	// streamEnableTLS is the stream_enable_tls of the API configuration,
 	// which decides if the runtime handlers enable stream_websockets by
-	// default.
+	// default. Only Config.Validate sets it, reloads keep the value of the
+	// running server.
 	streamEnableTLS bool
 
 	// Whether SELinux should be disabled within a pod,

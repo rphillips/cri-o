@@ -669,7 +669,8 @@ var _ = t.Describe("Config", func() {
 
 			It("should not enable streaming websockets by default with stream_enable_tls", func() {
 				// Given
-				sut.StreamEnableTLS = true
+				// Like Config.Validate on the start of the server.
+				sut.SetStreamEnableTLS(true)
 
 				handler := podRuntime()
 				handler.StreamWebsockets = nil
