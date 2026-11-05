@@ -2469,22 +2469,7 @@ func (r *RuntimeHandler) ValidateWebsocketStreaming(name string) error {
 		if errors.Is(err, conmonrsClient.ErrUnsupported) {
 			logrus.Debugf("Unable to verify pod runtime version: %v", err)
 
-			if r.RuntimeStreamWebsockets() {
-				logrus.Warnf(
-					"Disabling streaming over websockets for runtime handler %q, it requires conmon-rs >= v1.2.0",
-					name,
-				)
-			} else if r.StreamWebsockets == nil {
-				logrus.Debugf(
-					"Not enabling streaming over websockets for runtime handler %q by default, it requires conmon-rs >= v1.2.0",
-					name,
-				)
-			}
-
-			// Assign a new value instead of writing through the pointer:
-			// a reload copies the handlers of the freshly parsed config,
-			// which keep sharing their pointers with that config.
-			r.StreamWebsockets = new(false)
+			r.resolveWebsocketStreaming(name, false)
 
 			return nil
 		}
@@ -2513,8 +2498,17 @@ func (r *RuntimeHandler) ValidateWebsocketStreaming(name string) error {
 
 	// Before, the streaming server of conmon-rs only spoke the v5 WebSocket
 	// protocol for exec and attach, while the kubelet talks SPDY to it.
-	supported := r.conmonrsSupports(conmonrsClient.FeatureStreamingProtocols)
+	r.resolveWebsocketStreaming(name, r.conmonrsSupports(conmonrsClient.FeatureStreamingProtocols))
 
+	return nil
+}
+
+// resolveWebsocketStreaming enables an unset stream_websockets if conmon-rs
+// supports the streaming protocols of the kubelet, and disables it if not.
+func (r *RuntimeHandler) resolveWebsocketStreaming(name string, supported bool) {
+	// Assign new values instead of writing through the pointer: a reload
+	// copies the handlers of the freshly parsed config, which keep sharing
+	// their pointers with that config.
 	switch {
 	case r.StreamWebsockets == nil:
 		if supported {
@@ -2539,8 +2533,6 @@ func (r *RuntimeHandler) ValidateWebsocketStreaming(name string) error {
 
 		r.StreamWebsockets = new(false)
 	}
-
-	return nil
 }
 
 // conmonrsSupports returns whether the conmon-rs binary of this handler
