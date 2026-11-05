@@ -1794,7 +1794,7 @@ func (c *RuntimeConfig) ValidateRuntimes() error {
 
 	// Validate if runtime_path does exist for each runtime
 	for name, handler := range c.Runtimes {
-		handler.validateWebsocketStreamingDefault(name, c.streamEnableTLS, c.InfraCtrCPUSet != "")
+		handler.applyWebsocketStreamingDefault(name, c.streamEnableTLS, c.InfraCtrCPUSet != "")
 
 		if err := handler.Validate(name); err != nil {
 			if c.DefaultRuntime == name {
@@ -2370,13 +2370,14 @@ func (r *RuntimeHandler) ValidateContainerCreateTimeout(name string) {
 	}
 }
 
-// validateWebsocketStreamingDefault keeps stream_websockets disabled by
+// applyWebsocketStreamingDefault keeps stream_websockets disabled by
 // default if the streaming server of CRI-O uses TLS, because conmon-rs serves
 // the streams over plain HTTP on the loopback interface, or if
 // exec_cpu_affinity or infra_ctr_cpuset is set, because conmon-rs does not run
 // the exec sessions it serves in the exec cgroup of the container, nor pins
-// their runtime to the infra container CPU set.
-func (r *RuntimeHandler) validateWebsocketStreamingDefault(
+// their runtime to the infra container CPU set. It has to run before
+// ValidateWebsocketStreaming, which enables an unset stream_websockets.
+func (r *RuntimeHandler) applyWebsocketStreamingDefault(
 	name string,
 	streamEnableTLS, infraCtrCPUSet bool,
 ) {
@@ -2443,7 +2444,10 @@ func (r *RuntimeHandler) validateWebsocketStreamingDefault(
 
 // ValidateWebsocketStreaming can be used to verify if the runtime supports
 // WebSocket streaming. If stream_websockets is not set for a pod runtime, it
-// gets enabled if conmon-rs supports it.
+// gets enabled if conmon-rs supports it. It does not know about
+// stream_enable_tls, exec_cpu_affinity and infra_ctr_cpuset, so callers have to
+// apply the default of applyWebsocketStreamingDefault first, like
+// ValidateRuntimes does.
 func (r *RuntimeHandler) ValidateWebsocketStreaming(name string) error {
 	if r.RuntimeType != RuntimeTypePod {
 		if r.RuntimeStreamWebsockets() {
