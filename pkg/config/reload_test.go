@@ -667,6 +667,27 @@ var _ = t.Describe("Config", func() {
 				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeFalse())
 			})
 
+			It("should ignore the stream_enable_tls of the reloaded config", func() {
+				// Given
+				handler := podRuntime()
+				handler.StreamWebsockets = nil
+
+				newConfig := &config.Config{}
+				newConfig.StreamEnableTLS = true
+				newConfig.Runtimes = config.Runtimes{
+					config.DefaultRuntime: sut.Runtimes[config.DefaultRuntime],
+					"pod":                 handler,
+				}
+
+				// When
+				err := sut.ReloadRuntimes(newConfig)
+
+				// Then
+				Expect(err).ToNot(HaveOccurred())
+				Expect(sut.Runtimes["pod"].RuntimeStreamWebsockets()).To(BeTrue())
+				Expect(sut.Runtimes["pod"].RuntimeStreamPortForward()).To(BeTrue())
+			})
+
 			It("should not enable streaming websockets by default with stream_enable_tls", func() {
 				// Given
 				// Like Config.Validate on the start of the server.
